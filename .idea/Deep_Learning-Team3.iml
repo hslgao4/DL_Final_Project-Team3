@@ -5,4 +5,7 @@
     <orderEntry type="jdk" jdkName="Remote Python 3.10.12 (sftp://ubuntu@54.83.170.157:22/usr/bin/python3)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
+  <component name="PyDocumentationSettings">
+    <option name="renderExternalDocumentation" value="true" />
+  </component>
 </module>
