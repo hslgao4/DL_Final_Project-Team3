@@ -15,8 +15,12 @@ sns.barplot(data=df_bar,
             x='Number of masks',
             y='Count',
             order=df_bar.sort_values('Count', ascending=False)['Number of masks'])
-plt.title('Count - Number of Masks')
+plt.title('Count - Number of Masks in each Image')
 plt.tight_layout()
+
+for i, v in enumerate(df_bar.Count):
+    plt.text(i, v, f"{v}", ha='center')
+
 plt.show()
 
 
@@ -27,7 +31,7 @@ percent = [round(n/df.shape[0]*100, 2) for n in N]
 
 sns.barplot(x=organs,
             y=percent)
-plt.title('Percentages of Images with Masks')
+plt.title('Percentages - Images with Masks')
 plt.xlabel('Organ')
 plt.ylabel('Percentages')
 plt.ylim(0, 50)
