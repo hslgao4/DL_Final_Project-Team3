@@ -1,7 +1,9 @@
-import copy
-import time
 from colorama import Fore, Back, Style
+from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torchvision import models
+
 c_  = Fore.GREEN
 sr_ = Style.RESET_ALL
 import torch
@@ -36,7 +38,7 @@ model_name = 'Unet'
 train_bs = 64
 valid_bs = train_bs * 2
 img_size = (224, 224)
-n_epochs = 10
+n_epochs = 1
 LR = 0.0001
 scheduler = 'CosineAnnealingLR'
 n_accumulate = max(1, 32 // train_bs)
@@ -44,11 +46,9 @@ n_fold = 5
 fold_selected = 1
 num_classes = 3
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-DIR = '/home/ubuntu/team3/Project_team3/data/'
+DIR = os.getcwd() + '/data/'
 
 def set_seed(seed=42):
-    '''Sets the seed of the entire notebook so results are the same every time we run.
-    This is for REPRODUCIBILITY.'''
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
@@ -63,7 +63,7 @@ def set_seed(seed=42):
 
 # uses dataloader
 def read_data():
-    set_seed(seed)
+    #set_seed(seed)
     print(os.getcwd())
     df = pd.read_csv(DIR + 'train.csv')
     print(df.shape)
@@ -154,16 +154,7 @@ def read_data():
 
     return imgs, msks, train_loader, valid_loader
 
-
-# RLE
-# ref: https://www.kaggle.com/paulorzp/run-length-encode-and-decode
 def rle_decode(mask_rle, shape):
-    '''
-    mask_rle: run-length as string formated (start length)
-    shape: (height,width) of array to return
-    Returns numpy array, 1 - mask, 0 - background
-    '''
-
     s = mask_rle.split()
     starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
     starts -= 1
@@ -171,7 +162,7 @@ def rle_decode(mask_rle, shape):
     img = np.zeros(shape[0] * shape[1], dtype=np.uint8)
     for lo, hi in zip(starts, ends):
         img[lo:hi] = 1
-    return img.reshape(shape)  # Needed to align to RLE direction
+    return img.reshape(shape)  
 
 
 # Dataset
@@ -221,8 +212,26 @@ class BuildDataset(torch.utils.data.Dataset):
         img = img.astype(np.float32) / 255.
         return img
 
+def show_img(img, mask=None):
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    plt.imshow(img, cmap='bone')
 
-# Augmentation
+    if mask is not None:
+        plt.imshow(mask, alpha=0.5)
+        handles = [Rectangle((0, 0), 1, 1, color=_c) for _c in
+                   [(0.667, 0.0, 0.0), (0.0, 0.667, 0.0), (0.0, 0.0, 0.667)]]
+        labels = ["Large Bowel", "Small Bowel", "Stomach"]
+        plt.legend(handles, labels)
+    plt.axis('off')
+def plot_batch(imgs, msks, size=3):
+    plt.figure(figsize=(5*5, 5))
+    for idx in range(size):
+        plt.subplot(1, 5, idx+1)
+        img = imgs[idx,].permute((1, 2, 0)).numpy()
+        msk = msks[idx,].permute((1, 2, 0)).numpy()
+        show_img(img, msk)
+    plt.tight_layout()
+    plt.show()
 
 
 # Model Architecture
@@ -266,19 +275,155 @@ class FCNN(nn.Module):
         # x.size() = (N, 32, W/2, W/2)
         x = F.relu(self.conv3(x))
         # x.size() = (N, 16, W/2, W/2)
-        x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
+        #x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
         # x.size() = (N, 16, W, W)
         # x = self.conv4(x)
         # x.size() = (N, 2, W, W)
         x = self.conv5(x)
+        x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
         x = self.conv6(x)
         # x = self.conv7(x)
         # x = self.conv8(x)
 
         return x
 
+class FCNNP(nn.Module):
+
+    def __init__(self):
+        super(FCNNP, self).__init__()
+        # VGG16 as initial layers
+        vgg16 = models.vgg16(pretrained=True)
+        self.vgg_features = vgg16.features
+        print(vgg16.features)
+
+        # Freeze the VGG16 layers
+        for param in self.vgg_features.parameters():
+            param.requires_grad = False
+
+        # Additional layers
+        input_size = 7
+        target_size = 224
+
+        # Calculate the kernel_size and padding
+        kernel_size = 2 * (target_size - input_size) + 1
+        padding = kernel_size // 2
+
+        # Define conv5 with adjusted parameters
+        self.conv5 = nn.Conv2d(in_channels=512, out_channels=3, kernel_size=kernel_size, padding=padding)
+        nn.init.kaiming_normal(self.conv5.weight)
+        self.conv6 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, padding=2)
+        nn.init.kaiming_normal(self.conv6.weight)
+
+        self.upsample_mode = 'nearest'
+
+    # to experiment with other upsampling techniques
+    def set_upsample_mode(self, upsample_mode='nearest'):
+        if (upsample_mode in ['nearest', 'linear', 'bilinear', 'trilinear']):
+            self.upsample_mode = upsample_mode
+
+    def forward(self, x):
+        # Pass input through VGG16 layers
+        x = self.vgg_features(x)
+
+        # Additional layers
+        x = self.conv5(x)
+        x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
+        x = self.conv6(x)
+
+        return x
+
+class FCN8s(nn.Module):
+
+    def __init__(self, n_class=3):
+        super(FCN8s, self).__init__()
+        self.features_123 = nn.Sequential(
+            # conv1
+            nn.Conv2d(3, 64, 3, padding=100),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/2
+
+            # conv2
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/4
+
+            # conv3
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/8
+        )
+        self.features_4 = nn.Sequential(
+            # conv4
+            nn.Conv2d(256, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/16
+        )
+        self.features_5 = nn.Sequential(
+            # conv5 features
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/32
+        )
+        self.classifier = nn.Sequential(
+            # fc6
+            nn.Conv2d(512, 4096, 7),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(),
+
+            # fc7
+            nn.Conv2d(4096, 4096, 1),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(),
+
+            # score_fr
+            nn.Conv2d(4096, n_class, 1),
+        )
+        self.score_feat3 = nn.Conv2d(256, n_class, 1)
+        self.score_feat4 = nn.Conv2d(512, n_class, 1)
+        self.upscore = nn.ConvTranspose2d(n_class, n_class, 16, stride=8,
+                                              bias=False)
+        self.upscore_4 = nn.ConvTranspose2d(n_class, n_class, 4, stride=2,
+                                              bias=False)
+        self.upscore_5 = nn.ConvTranspose2d(n_class, n_class, 4, stride=2,
+                                              bias=False)
+
+    def forward(self, x):
+        feat3 = self.features_123(x)  #1/8
+        feat4 = self.features_4(feat3)  #1/16
+        feat5 = self.features_5(feat4)  #1/32
+
+        score5 = self.classifier(feat5)
+        upscore5 = self.upscore_5(score5)
+        score4 = self.score_feat4(feat4)
+        score4 = score4[:, :, 5:5+upscore5.size()[2], 5:5+upscore5.size()[3]].contiguous()
+        score4 += upscore5
+
+        score3 = self.score_feat3(feat3)
+        upscore4 = self.upscore_4(score4)
+        score3 = score3[:, :, 9:9+upscore4.size()[2], 9:9+upscore4.size()[3]].contiguous()
+        score3 += upscore4
+        h = self.upscore(score3)
+        h = h[:, :, 28:28+x.size()[2], 28:28+x.size()[3]].contiguous()
+
+        return h
 def model_definition():
-    model = FCNN()
+    model = FCNNP()
     model = model.to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
@@ -456,7 +601,7 @@ def iou_coef(y_true, y_pred, thr=0.5, dim=(2,3), epsilon=0.001):
     return iou
 
 def criterion(y_pred, y_true):
-    return 0.5*cross_entropy_loss(y_pred, y_true) + 0.5*dice_loss(y_pred, y_true)
+    return 0.5*iou_coef(y_pred, y_true) + 0.5*dice_coef(y_pred, y_true)
     #return dice_loss(y_pred, y_true)
 
 class AdagradOptimizer(Optimizer):
@@ -488,7 +633,6 @@ class AdagradOptimizer(Optimizer):
 
         return loss
 
-import monai
 # Train function
 def train_one_epoch(model, optimizer, scheduler, dataloader, device, epoch):
     scaler = amp.GradScaler()
@@ -651,3 +795,5 @@ if __name__ == '__main__':
     list_of_metrics = ['f1_micro', 'f1_macro', 'hlm']
     list_of_agg = ['avg']
     model, history= run_training(model, optimizer, scheduler, device, n_epochs, train_loader, valid_loader)
+
+    plot_batch(imgs, msks, size=5)
