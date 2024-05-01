@@ -1,6 +1,6 @@
 import pdb
 
-from libraries import *
+from toolbox import *
 
 '''Set up random seed'''
 np.random.seed(6303)
@@ -207,7 +207,7 @@ for epoch in range(epoch):
             prediction = model(images)
             loss = criterion(prediction, masks)
             Loss_v.append(loss.item())
-            prediction = nn.Sigmoid()(prediction)
+            prediction = (nn.Sigmoid()(prediction) > 0.5).double()
             val_dice = dice_coe(masks, prediction).cpu().detach().numpy()
             dice.append(val_dice)
 
