@@ -250,8 +250,98 @@ class FCNN(nn.Module):
 
         return x
 
+class FCN8s(nn.Module):
+
+    def __init__(self, n_class=3):
+        super(FCN8s, self).__init__()
+        self.features_123 = nn.Sequential(
+            # conv1
+            nn.Conv2d(3, 64, 3, padding=100),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/2
+
+            # conv2
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/4
+
+            # conv3
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/8
+        )
+        self.features_4 = nn.Sequential(
+            # conv4
+            nn.Conv2d(256, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/16
+        )
+        self.features_5 = nn.Sequential(
+            # conv5 features
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/32
+        )
+        self.classifier = nn.Sequential(
+            # fc6
+            nn.Conv2d(512, 4096, 7),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(),
+
+            # fc7
+            nn.Conv2d(4096, 4096, 1),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(),
+
+            # score_fr
+            nn.Conv2d(4096, n_class, 1),
+        )
+        self.score_feat3 = nn.Conv2d(256, n_class, 1)
+        self.score_feat4 = nn.Conv2d(512, n_class, 1)
+        self.upscore = nn.ConvTranspose2d(n_class, n_class, 16, stride=8,
+                                              bias=False)
+        self.upscore_4 = nn.ConvTranspose2d(n_class, n_class, 4, stride=2,
+                                              bias=False)
+        self.upscore_5 = nn.ConvTranspose2d(n_class, n_class, 4, stride=2,
+                                              bias=False)
+
+    def forward(self, x):
+        feat3 = self.features_123(x)  #1/8
+        feat4 = self.features_4(feat3)  #1/16
+        feat5 = self.features_5(feat4)  #1/32
+
+        score5 = self.classifier(feat5)
+        upscore5 = self.upscore_5(score5)
+        score4 = self.score_feat4(feat4)
+        score4 = score4[:, :, 5:5+upscore5.size()[2], 5:5+upscore5.size()[3]].contiguous()
+        score4 += upscore5
+
+        score3 = self.score_feat3(feat3)
+        upscore4 = self.upscore_4(score4)
+        score3 = score3[:, :, 9:9+upscore4.size()[2], 9:9+upscore4.size()[3]].contiguous()
+        score3 += upscore4
+        h = self.upscore(score3)
+        h = h[:, :, 28:28+x.size()[2], 28:28+x.size()[3]].contiguous()
+
+        return h
 def model_definition():
-    model = FCNN()
+    model = FCN8s()
     model = model.to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
@@ -281,31 +371,36 @@ def plot_batch(imgs, msks, size=3):
     for idx in range(size):
         plt.subplot(1, 5, idx+1)
         img = imgs[idx,].permute((1, 2, 0)).numpy()
-        msk = msks[idx,].permute((1, 2, 0)).numpy()
+        msk = msks[idx,].permute((1, 2, 0)).cpu().numpy()
         show_img(img, msk)
     plt.tight_layout()
     plt.show()
 
 if __name__ == '__main__':
 
-    df_train, valid_ids = read_data()
-    test_dataset = BuildDataset(df_train[df_train.index.isin(valid_ids)],)
-    test_loader = DataLoader(test_dataset, batch_size=5,
-                             num_workers=4, shuffle=False, pin_memory=True)
+    for i in range(1):
+        df_train, valid_ids = read_data()
+        test_dataset = BuildDataset(df_train[df_train.index.isin(valid_ids)],)
+        test_loader = DataLoader(test_dataset, batch_size=5,
+                                 num_workers=4, shuffle=True, pin_memory=False)
 
-    imgs, msks = next(iter(test_loader))
+        imgs, msks = next(iter(test_loader))
+        plot_batch(imgs, msks, size=5)
+        imgs = imgs.to(device, dtype=torch.float)
+        msks = msks.to(device, dtype=torch.float)
 
-    imgs = imgs.to(device, dtype=torch.float)
+        preds = []
+        for fold in range(20):
+            model = load_model('/home/ubuntu/team3/Project_team3/best_model_Kanishk.pt')
+            with torch.no_grad():
+                pred = model(imgs)
+                pred = nn.Sigmoid()(pred)
+            #preds.append(pred)
 
-    preds = []
-    for fold in range(1):
-        model = load_model('/home/ubuntu/team3/Project_team3/final_model_Kanishk.pt')
-        with torch.no_grad():
-            pred = model(imgs)
-            pred = (nn.Sigmoid()(pred) > 0.5).double()
-        preds.append(pred)
+        print(imgs.shape)
+        print(type(imgs))
+        imgs = imgs.cpu().detach()
+        #mean_preds = torch.mean(torch.stack(preds, dim=0), dim=0).cpu().detach()
 
-    imgs = imgs.cpu().detach()
-    preds = torch.mean(torch.stack(preds, dim=0), dim=0).cpu().detach()
-    plot_batch(imgs, preds, size=5)
-    gc.collect()
+        plot_batch(imgs, pred, size=5)
+        gc.collect()
