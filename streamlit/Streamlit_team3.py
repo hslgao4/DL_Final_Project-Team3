@@ -9,11 +9,16 @@ with tabs[0]:
 
     st.divider()
 
-    st.header("Dataset")
-    st.markdown('**Source**: UW-Madison Carbone Cancer Center. MRI scans from actual cancer patients on separate days during radiation treatment.')
+    st.header('Introduction')
+    st.markdown('''
+    * A specific application of image segmentation techniques in the field of medical imagings.
+    * Identify and isolate multiple organs within medical scans such as CT, MRI, or ultrasound images.
+    * **Data Source**: UW-Madison Carbone Cancer Center. MRI scans from actual cancer patients on separate days during radiation treatment.
+    ''')
+
 
     st.divider()
-
+    st.header("Dataset")
     st.markdown('**id**: unique identifier for object')
     st.markdown('**class**: the predicted class for the object(large_bowel, small_bowel, stomach')
 
@@ -26,13 +31,15 @@ with tabs[0]:
     with col2:
         st.table(df)
 
-    st.markdown('**segmentation**: Run-Length Encoding(RLE)-encoded pixels for the identified object(28094 3 28358 7...). RLE-encoded pixels is method of encoding pixel data using RLE, which is a form of lossless data compression.')
+    st.markdown('**segmentation**: Run-Length Encoding(RLE)-encoded pixels for the identified object(28094 3 28358 7...). Run-length encoding is a basic form of data compression where sequences of the **same data value (runs)** are stored as **a single data value and count**. This method is particularly efficient for images with large areas of **uniform pixels**。')
 
     st.subheader("Data processing")
-    st.markdown('Create new columns: case, day, slice, width, height, path... (115488, 3)')
-    st.markdown('Create separate column for class: large bowel, small bowel, stomach. The values are corresponding segmentation(RLE-encoded pixels) (38496, 11).')
-    st.markdown('Decode the RLE-encoded pixels in dataloader.')
-    st.markdown('Remove images with no masks (16590, 11)')
+    st.markdown('''
+    * Create new columns: width, height, path... "slice_0105_266_266_1.50_1.50.png" (115488, 3)
+    * Create separate column for class: large bowel, small bowel, stomach. The values are corresponding segmentation(RLE-encoded pixels) (38496, 11).
+    * Remove images with no masks (16590, 11)
+    ''')
+
 
     st.divider()
 
@@ -48,10 +55,13 @@ with tabs[0]:
 
     st.header("Model 1: U-Net")
     st.subheader('Brief Intro')
-    st.markdown("A convolutional neural network (CNN) architecture which was originally developed for biomedical image segmentation tasks.")
-    st.markdown("Notable for its efficiency and accuracy in segmenting images where the number of labeled samples is relatively small.")
-    st.markdown("'U-shaped' structure - Contracting Path (Downsampling) & Expansive Path (Upsampling).")
-    st.markdown("The concatenation of feature maps from the contracting path with those from the expansive path, which helps in precise localization.")
+    st.markdown("""
+    * A convolutional neural network (CNN) architecture which was originally developed for biomedical image segmentation tasks.
+    * U-shaped' structure - Contracting Path & Expansive Path.
+    * The feature maps from the contracting path and expansive path was concatenated.
+    """)
+    # st.markdown("Notable for its efficiency and accuracy in segmenting images where the number of labeled samples is relatively small.")
+
     st.image("/home/ubuntu/Deep_Learning-Team3/streamlit/unet.png")
 
     st.divider()
@@ -130,6 +140,14 @@ with tabs[0]:
     st.markdown(''' * **Train score = 0.5*(dice coeff) + 0.5*(IoU coeff) = 0.69** ''')
     st.image("/home/ubuntu/Deep_Learning-Team3/streamlit/fcnn_5.png")
 
+    st.divider()
+    st.header('Conclusion')
+    st.markdown('''
+    * UNet is able to do image localisation by predicting the image pixel by pixel
+    * U-Net combines the strengths of traditional FCNs with additional features that make it more effective for image segmentation tasks.
+    * The two models differ in symmetricity of the encoder and decoder portions of the network and the skip connections between them.
+    ''')
+
 
 
 
@@ -179,7 +197,7 @@ with tabs[1]:
         model_type = st.sidebar.radio("Select Model Type", ("U-Net", "F-CNN"))
 
         st.title("Upload Your MRI scan")
-        uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+        uploaded_file = st.file_uploader("Choose an image...", type=["png"])
 
         if st.button("Get Masks"):
             if model_type == "U-Net":

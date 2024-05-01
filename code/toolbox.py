@@ -66,7 +66,6 @@ def rle_encode(img):
 def show_img(img, mask=None):
 
     plt.imshow(img, cmap='bone')
-
     if mask is not None:
         plt.imshow(mask, alpha=0.5)
         handles = [Rectangle((0, 0), 1, 1, color=_c) for _c in
