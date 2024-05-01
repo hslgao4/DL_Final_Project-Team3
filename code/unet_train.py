@@ -184,66 +184,66 @@ train_loss = []
 val_loss = []
 DICE = []
 
-for epoch in range(epoch):
-    Loss_t = []
-    Loss_v = []
-    dice = []
-    model.train()
-    for i, (image, mask) in enumerate(tqdm(train, desc=f"Epoch {epoch+1}")):
-        images = Variable(image).to(device)
-        masks = Variable(mask).to(device)
-        optimizer.zero_grad()
-        prediction = model(images)
-        loss = criterion(prediction, masks)
-        loss.backward()
-        optimizer.step()
-        Loss_t.append(loss.item())
-
-    model.eval()
-    with torch.no_grad():
-        for image, mask in tqdm(valid, desc=f"Epoch {epoch+1} Validation"):
-            images = Variable(image).to(device)
-            masks = Variable(mask).to(device)
-            prediction = model(images)
-            loss = criterion(prediction, masks)
-            Loss_v.append(loss.item())
-            prediction = (nn.Sigmoid()(prediction) > 0.5).double()
-            val_dice = dice_coe(masks, prediction).cpu().detach().numpy()
-            dice.append(val_dice)
-
-    train_loss.append(sum(Loss_t) / len(Loss_t))
-    val_loss.append(sum(Loss_v) / len(Loss_v))
-    DICE.append(sum(dice) / len(dice))
-    print(f'Epoch{epoch + 1} --> Train Loss: {sum(Loss_t) / len(Loss_t)}')
-    print(f'Epoch{epoch + 1} --> Validation Loss: {sum(Loss_v) / len(Loss_v)}, DICE coe: {sum(dice) / len(dice)}')
-
-    if len(DICE) >= 2:
-        if DICE[-1] > DICE[-2] and SAVE_MODEL:
-            torch.save(model.state_dict(), "model_{}.pt".format(model_name))
-
-
-'''Plot the DICE Loss of Train and Validation'''
-plt.figure()
-plt.plot(np.arange(epoch+1) + 1, train_loss, label='Train loss')
-plt.plot(np.arange(epoch+1) + 1, val_loss, label='Validation loss')
-plt.xlabel("Epoch")
-plt.ylabel("0.5*BCE + 0.5*DICE Loss")
-plt.title('0.5*BCE + 0.5*DICE: Train vs. Validation')
-plt.xticks(np.arange(epoch+1) + 1)
-plt.tight_layout()
-plt.legend()
-plt.show()
-
-plt.figure()
-plt.plot(np.arange(epoch+1) + 1, DICE, label='DICE coe')
-plt.title('Validation DICE Coefficient')
-plt.xlabel("Epoch")
-plt.ylabel("DICE coe")
-plt.xticks(np.arange(epoch+1) + 1)
-plt.tight_layout()
-plt.legend()
-plt.show()
-
+# for epoch in range(epoch):
+#     Loss_t = []
+#     Loss_v = []
+#     dice = []
+#     model.train()
+#     for i, (image, mask) in enumerate(tqdm(train, desc=f"Epoch {epoch+1}")):
+#         images = Variable(image).to(device)
+#         masks = Variable(mask).to(device)
+#         optimizer.zero_grad()
+#         prediction = model(images)
+#         loss = criterion(prediction, masks)
+#         loss.backward()
+#         optimizer.step()
+#         Loss_t.append(loss.item())
+#
+#     model.eval()
+#     with torch.no_grad():
+#         for image, mask in tqdm(valid, desc=f"Epoch {epoch+1} Validation"):
+#             images = Variable(image).to(device)
+#             masks = Variable(mask).to(device)
+#             prediction = model(images)
+#             loss = criterion(prediction, masks)
+#             Loss_v.append(loss.item())
+#             prediction = (nn.Sigmoid()(prediction) > 0.5).double()
+#             val_dice = dice_coe(masks, prediction).cpu().detach().numpy()
+#             dice.append(val_dice)
+#
+#     train_loss.append(sum(Loss_t) / len(Loss_t))
+#     val_loss.append(sum(Loss_v) / len(Loss_v))
+#     DICE.append(sum(dice) / len(dice))
+#     print(f'Epoch{epoch + 1} --> Train Loss: {sum(Loss_t) / len(Loss_t)}')
+#     print(f'Epoch{epoch + 1} --> Validation Loss: {sum(Loss_v) / len(Loss_v)}, DICE coe: {sum(dice) / len(dice)}')
+#
+#     if len(DICE) >= 2:
+#         if DICE[-1] > DICE[-2] and SAVE_MODEL:
+#             torch.save(model.state_dict(), "model_{}.pt".format(model_name))
+#
+#
+# '''Plot the DICE Loss of Train and Validation'''
+# plt.figure()
+# plt.plot(np.arange(epoch+1) + 1, train_loss, label='Train loss')
+# plt.plot(np.arange(epoch+1) + 1, val_loss, label='Validation loss')
+# plt.xlabel("Epoch")
+# plt.ylabel("0.5*BCE + 0.5*DICE Loss")
+# plt.title('0.5*BCE + 0.5*DICE: Train vs. Validation')
+# plt.xticks(np.arange(epoch+1) + 1)
+# plt.tight_layout()
+# plt.legend()
+# plt.show()
+#
+# plt.figure()
+# plt.plot(np.arange(epoch+1) + 1, DICE, label='DICE coe')
+# plt.title('Validation DICE Coefficient')
+# plt.xlabel("Epoch")
+# plt.ylabel("DICE coe")
+# plt.xticks(np.arange(epoch+1) + 1)
+# plt.tight_layout()
+# plt.legend()
+# plt.show()
+#
 
 
 '''Test model'''

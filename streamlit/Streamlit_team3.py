@@ -197,7 +197,7 @@ with tabs[1]:
         model_type = st.sidebar.radio("Select Model Type", ("U-Net", "F-CNN"))
 
         st.title("Upload Your MRI scan")
-        uploaded_file = st.file_uploader("Choose an image...", type=["png"])
+        uploaded_file = st.file_uploader("Choose an image...", type=["png, jpeg"])
 
         if st.button("Get Masks"):
             if model_type == "U-Net":
