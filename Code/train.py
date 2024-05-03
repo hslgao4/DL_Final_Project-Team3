@@ -35,10 +35,10 @@ from torch.utils.data import DataLoader
 seed = 42
 debug = False
 model_name = 'Unet'
-train_bs = 64
+train_bs = 128
 valid_bs = train_bs * 2
 img_size = (224, 224)
-n_epochs = 1
+n_epochs = 10
 LR = 0.0001
 scheduler = 'CosineAnnealingLR'
 n_accumulate = max(1, 32 // train_bs)
@@ -162,7 +162,7 @@ def rle_decode(mask_rle, shape):
     img = np.zeros(shape[0] * shape[1], dtype=np.uint8)
     for lo, hi in zip(starts, ends):
         img[lo:hi] = 1
-    return img.reshape(shape)  
+    return img.reshape(shape)
 
 
 # Dataset
@@ -235,66 +235,12 @@ def plot_batch(imgs, msks, size=3):
 
 
 # Model Architecture
-class FCNN(nn.Module):
-
+class FCNVGG(nn.Module):
     def __init__(self):
-        super(FCNN, self).__init__()
-        # Learnable layers
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, padding=1)
-        nn.init.kaiming_normal(self.conv1.weight)
-        self.conv2 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1)
-        nn.init.kaiming_normal(self.conv2.weight)
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=256, kernel_size=3, padding=1)
-        nn.init.kaiming_normal(self.conv3.weight)
-        # self.conv4 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=5, padding=2)
-        # nn.init.kaiming_normal(self.conv4.weight)
-        self.conv5 = nn.Conv2d(in_channels=256, out_channels=3, kernel_size=5, padding=2)
-        nn.init.kaiming_normal(self.conv5.weight)
-        self.conv6 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=5, padding=2)
-        nn.init.kaiming_normal(self.conv6.weight)
-        # self.conv7 = nn.Conv2d(in_channels=256, out_channels=3, kernel_size=5, padding=2)
-        # nn.init.kaiming_normal(self.conv7.weight)
-        # self.conv8 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=5, padding=2)
-        # nn.init.kaiming_normal(self.conv8.weight)
+        super(FCNVGG, self).__init__()
 
-        self.upsample_mode = 'nearest'
-
-    # to experiment with other upsampling techniques
-    def set_upsample_mode(self, upsample_mode='nearest'):
-        if (upsample_mode in ['nearest', 'linear', 'bilinear', 'trilinear']):
-            self.upsample_mode = upsample_mode
-
-
-    def forward(self, x):
-        # x.size() = (N, 3, W, W)
-        x = F.relu(self.conv1(x))
-        # x.size() = (N, 16, W, W)
-        x = F.relu(self.conv2(x))
-        # x.size() = (N, 32, W, W)
-        x = F.max_pool2d(x, (2,2))
-        # x.size() = (N, 32, W/2, W/2)
-        x = F.relu(self.conv3(x))
-        # x.size() = (N, 16, W/2, W/2)
-        #x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
-        # x.size() = (N, 16, W, W)
-        # x = self.conv4(x)
-        # x.size() = (N, 2, W, W)
-        x = self.conv5(x)
-        x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
-        x = self.conv6(x)
-        # x = self.conv7(x)
-        # x = self.conv8(x)
-
-        return x
-
-class FCNNP(nn.Module):
-
-    def __init__(self):
-        super(FCNNP, self).__init__()
-        # VGG16 as initial layers
         vgg16 = models.vgg16(pretrained=True)
         self.vgg_features = vgg16.features
-        print(vgg16.features)
 
         # Freeze the VGG16 layers
         for param in self.vgg_features.parameters():
@@ -310,27 +256,38 @@ class FCNNP(nn.Module):
 
         # Define conv5 with adjusted parameters
         self.conv5 = nn.Conv2d(in_channels=512, out_channels=3, kernel_size=kernel_size, padding=padding)
-        nn.init.kaiming_normal(self.conv5.weight)
-        self.conv6 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, padding=2)
-        nn.init.kaiming_normal(self.conv6.weight)
+        nn.init.kaiming_normal_(self.conv5.weight)
 
-        self.upsample_mode = 'nearest'
+        # Transpose convolution layers
+        self.trans_conv1 = nn.ConvTranspose2d(in_channels=3, out_channels=64, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv1.weight)
 
-    # to experiment with other upsampling techniques
-    def set_upsample_mode(self, upsample_mode='nearest'):
-        if (upsample_mode in ['nearest', 'linear', 'bilinear', 'trilinear']):
-            self.upsample_mode = upsample_mode
+        self.trans_conv2 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv2.weight)
+
+        self.trans_conv3 = nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv3.weight)
+
+        self.trans_conv4 = nn.ConvTranspose2d(in_channels=16, out_channels=8, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv4.weight)
+
+        self.conv6 = nn.Conv2d(in_channels=8, out_channels=3, kernel_size=3, padding=1)
+        nn.init.kaiming_normal_(self.conv6.weight)
+
+        self.conv7 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, padding=1)
+        nn.init.kaiming_normal_(self.conv7.weight)
 
     def forward(self, x):
-        # Pass input through VGG16 layers
         x = self.vgg_features(x)
-
-        # Additional layers
         x = self.conv5(x)
-        x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
+        x = self.trans_conv1(x)
+        x = self.trans_conv2(x)
+        x = self.trans_conv3(x)
+        x = self.trans_conv4(x)
         x = self.conv6(x)
-
+        x = self.conv7(x)
         return x
+
 
 class FCN8s(nn.Module):
 
@@ -423,7 +380,7 @@ class FCN8s(nn.Module):
 
         return h
 def model_definition():
-    model = FCNNP()
+    model = FCNVGG()
     model = model.to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
@@ -438,151 +395,19 @@ def load_model(path):
     model.eval()
     return model
 
-
 # Calculating Loss
-def metrics_func(metrics, aggregates, y_true, y_pred):
-    def cross_entropy_loss(target, predicted):
-        return F.cross_entropy(predicted, target)
-
-    def jaccard_loss(target, predicted, epsilon=1e-6):
-        intersection = torch.sum(predicted * target)
-        union = torch.sum(predicted) + torch.sum(target) - intersection
-        iou = (intersection + epsilon) / (union + epsilon)
-        return 1.0 - iou
-
-    def dice_loss(target, predicted, epsilon=1e-6):
-        intersection = torch.sum(predicted * target)
-        union = torch.sum(predicted) + torch.sum(target)
-        dice_coefficient = (2.0 * intersection + epsilon) / (union + epsilon)
-        return 1.0 - dice_coefficient
-
-    def focal_loss(predicted, target, alpha=0.25, gamma=2.0):
-        ce_loss = F.cross_entropy(target, predicted, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = alpha * (1 - pt) ** gamma * ce_loss
-        return torch.mean(focal_loss)
-
-    def weighted_cross_entropy_loss(target, predicted, weights):
-        ce_loss = F.cross_entropy(predicted, target, reduction='none')
-        weighted_ce_loss = ce_loss * weights
-        return torch.mean(weighted_ce_loss)
-
-    def lovasz_softmax_loss(target, predicted):
-        # Implement Lovász-Softmax loss
-        pass  # Placeholder for implementation
-
-    def boundary_loss(target, predicted):
-        # Implement Boundary loss
-        pass  # Placeholder for implementation
-
-
-    def tversky_loss(target, predicted, alpha=0.5, beta=0.5, epsilon=1e-6):
-        # Assuming `predicted` and `target` are tensors
-        true_positive = torch.sum(predicted * target)
-        false_positive = torch.sum(predicted * (1 - target))
-        false_negative = torch.sum((1 - predicted) * target)
-
-        tversky_index = (true_positive + epsilon) / (
-                    true_positive + alpha * false_positive + beta * false_negative + epsilon)
-        return 1.0 - tversky_index
-    def dice_coef(y_true, y_pred, thr=0.5, dim=(2,3), epsilon=0.001):
-        y_true = y_true.to(torch.float32)
-        y_pred = (y_pred>thr).to(torch.float32)
-        inter = (y_true*y_pred).sum(dim=dim)
-        den = y_true.sum(dim=dim) + y_pred.sum(dim=dim)
-        dice = ((2*inter+epsilon)/(den+epsilon)).mean(dim=(1,0))
-        return dice
-
-    def iou_coef(y_true, y_pred, thr=0.5, dim=(2,3), epsilon=0.001):
-        y_true = y_true.to(torch.float32)
-        y_pred = (y_pred>thr).to(torch.float32)
-        inter = (y_true*y_pred).sum(dim=dim)
-        union = (y_true + y_pred - y_true*y_pred).sum(dim=dim)
-        iou = ((inter+epsilon)/(union+epsilon)).mean(dim=(1,0))
-        return iou
-
-    def criterion(y_pred, y_true):
-        return 0.6*cross_entropy_loss(y_pred, y_true) + 0.4*dice_loss(y_pred, y_true)
-
-
-    xcont = 1
-    xsum = 0
-    xavg = 0
-    res_dict = {}
-    for xm in metrics:
-        if xm == 'cel':
-            # cross entropy loss
-            xmet = cross_entropy_loss(y_true, y_pred, 'micro')
-        elif xm == 'jl':
-            xmet = jaccard_loss(y_true, y_pred, 'macro')
-        elif xm == 'dl':
-            xmet = dice_loss(y_true, y_pred, 'weighted')
-        elif xm == 'fl':
-            xmet = focal_loss(y_true, y_pred)
-        elif xm == 'wce':
-            xmet =weighted_cross_entropy_loss(y_true, y_pred)
-        elif xm == 'lsl':
-            xmet =lovasz_softmax_loss(y_true, y_pred)
-        elif xm == 'bl':
-            xmet =boundary_loss(y_true, y_pred)
-        elif xm == 'tl':
-            xmet =tversky_loss(y_true, y_pred)
-        elif xm == 'bl':
-            xmet =boundary_loss(y_true, y_pred)
-        elif xm == 'dc':
-            xmet =dice_coef(y_true, y_pred)
-        elif xm == 'iouc':
-            xmet =iou_coef(y_true, y_pred)
-        elif xm == 'cr':
-            xmet =criterion(y_true, y_pred)
-        else:
-            xmet = 0
-
-        res_dict[xm] = xmet
-
-        xsum = xsum + xmet
-        xcont = xcont +1
-
-    if 'sum' in aggregates:
-        res_dict['sum'] = xsum
-    if 'avg' in aggregates and xcont > 0:
-        res_dict['avg'] = xsum/xcont
-    # Ask for arguments for each metric
-
-    return res_dict
-def cross_entropy_loss(predicted, target):
-    return F.cross_entropy(predicted, target)
-
 def dice_loss(predicted, target, epsilon=1e-6):
     intersection = torch.sum(predicted * target)
     union = torch.sum(predicted) + torch.sum(target)
     dice_coefficient = (2.0 * intersection + epsilon) / (union + epsilon)
     return 1.0 - dice_coefficient
 
-def iou_loss(predicted, target, epsilon=1e-6):
+def iou_losOs(predicted, target, epsilon=1e-6):
     intersection = torch.sum(predicted * target)
     union = torch.sum(predicted) + torch.sum(target) - intersection
     iou = (intersection + epsilon) / (union + epsilon)
     return 1.0 - iou
 
-def focal_loss(predicted, target, alpha=0.25, gamma=2.0):
-    ce_loss = F.cross_entropy(predicted, target, reduction='none')
-    pt = torch.exp(-ce_loss)
-    focal_loss = alpha * (1 - pt) ** gamma * ce_loss
-    return torch.mean(focal_loss)
-
-def weighted_cross_entropy_loss(predicted, target, weights):
-    ce_loss = F.cross_entropy(predicted, target, reduction='none')
-    weighted_ce_loss = ce_loss * weights
-    return torch.mean(weighted_ce_loss)
-
-def lovasz_softmax_loss(predicted, target):
-    # Implement Lovász-Softmax loss
-    pass  # Placeholder for implementation
-
-def boundary_loss(predicted, target):
-    # Implement Boundary loss
-    pass  # Placeholder for implementation
 
 def dice_coef(y_true, y_pred, thr=0.5, dim=(2,3), epsilon=0.001):
     y_true = y_true.to(torch.float32)
@@ -649,7 +474,8 @@ def train_one_epoch(model, optimizer, scheduler, dataloader, device, epoch):
 
             with amp.autocast(enabled=True):
                 y_pred = model(images)
-                loss = criterion(y_pred, masks)
+                target_masks_resized = F.interpolate(masks, size=(112, 112), mode='bilinear', align_corners=False)
+                loss = criterion(y_pred, target_masks_resized)
                 loss = loss / n_accumulate
 
             scaler.scale(loss).backward()
@@ -758,7 +584,8 @@ def valid_one_epoch(model, dataloader, device, epoch=1):
                 batch_size = images.size(0)
 
                 y_pred = model(images)
-                loss = criterion(y_pred, masks)
+                target_masks_resized = F.interpolate(masks, size=(112, 112), mode='bilinear', align_corners=False)
+                loss = criterion(y_pred, target_masks_resized)
 
                 running_loss += (loss.item() * batch_size)
                 dataset_size += batch_size
@@ -767,8 +594,9 @@ def valid_one_epoch(model, dataloader, device, epoch=1):
 
                 y_pred = nn.Sigmoid()(y_pred)
                 #test_metrics = metrics_func(list_of_metrics, list_of_agg, real_labels[1:], pred_labels)
-                val_dice = dice_coef(masks, y_pred).cpu().detach().numpy()
-                val_jaccard = iou_coef(masks, y_pred).cpu().detach().numpy()
+                target_masks_resized = F.interpolate(masks, size=(112, 112), mode='bilinear', align_corners=False)
+                val_dice = dice_coef(target_masks_resized, y_pred).cpu().detach().numpy()
+                val_jaccard = iou_coef(target_masks_resized, y_pred).cpu().detach().numpy()
                 val_scores.append([val_dice, val_jaccard])
 
                 mem = torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0
@@ -783,8 +611,6 @@ def valid_one_epoch(model, dataloader, device, epoch=1):
     return epoch_loss, val_scores
 
 def save_model(model):
-    # Open the file
-
     print(model, file=open('summary_{}.txt'.format('kanishk'), "w"))
 
 
