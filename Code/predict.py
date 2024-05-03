@@ -2,6 +2,8 @@ from colorama import Fore, Back, Style
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torchvision import models
+
 c_  = Fore.GREEN
 sr_ = Style.RESET_ALL
 import torch
@@ -33,7 +35,7 @@ from torch.utils.data import DataLoader
 seed = 42
 debug = False
 model_name = 'Unet'
-train_bs = 64
+train_bs = 128
 valid_bs = train_bs * 2
 img_size = (224, 224)
 n_epochs = 10
@@ -198,58 +200,58 @@ class BuildDataset(torch.utils.data.Dataset):
         img = np.tile(img[..., None], [1, 1, 3])  # gray to rgb
         img = img.astype(np.float32) / 255.
         return img
-
-class FCNN(nn.Module):
-
+class FCNVGG(nn.Module):
     def __init__(self):
-        super(FCNN, self).__init__()
-        # Learnable layers
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, padding=1)
-        nn.init.kaiming_normal(self.conv1.weight)
-        self.conv2 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1)
-        nn.init.kaiming_normal(self.conv2.weight)
-        self.conv3 = nn.Conv2d(in_channels=64, out_channels=256, kernel_size=3, padding=1)
-        nn.init.kaiming_normal(self.conv3.weight)
-        # self.conv4 = nn.Conv2d(in_channels=256, out_channels=512, kernel_size=5, padding=2)
-        # nn.init.kaiming_normal(self.conv4.weight)
-        self.conv5 = nn.Conv2d(in_channels=256, out_channels=3, kernel_size=5, padding=2)
-        nn.init.kaiming_normal(self.conv5.weight)
-        self.conv6 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=5, padding=2)
-        nn.init.kaiming_normal(self.conv6.weight)
-        # self.conv7 = nn.Conv2d(in_channels=256, out_channels=3, kernel_size=5, padding=2)
-        # nn.init.kaiming_normal(self.conv7.weight)
-        # self.conv8 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=5, padding=2)
-        # nn.init.kaiming_normal(self.conv8.weight)
+        super(FCNVGG, self).__init__()
 
-        self.upsample_mode = 'nearest'
+        vgg16 = models.vgg16(pretrained=True)
+        self.vgg_features = vgg16.features
 
-    # to experiment with other upsampling techniques
-    def set_upsample_mode(self, upsample_mode='nearest'):
-        if (upsample_mode in ['nearest', 'linear', 'bilinear', 'trilinear']):
-            self.upsample_mode = upsample_mode
+        # Freeze the VGG16 layers
+        for param in self.vgg_features.parameters():
+            param.requires_grad = False
 
+        # Additional layers
+        input_size = 7
+        target_size = 224
+
+        # Calculate the kernel_size and padding
+        kernel_size = 2 * (target_size - input_size) + 1
+        padding = kernel_size // 2
+
+        # Define conv5 with adjusted parameters
+        self.conv5 = nn.Conv2d(in_channels=512, out_channels=3, kernel_size=kernel_size, padding=padding)
+        nn.init.kaiming_normal_(self.conv5.weight)
+
+        # Transpose convolution layers
+        self.trans_conv1 = nn.ConvTranspose2d(in_channels=3, out_channels=64, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv1.weight)
+
+        self.trans_conv2 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv2.weight)
+
+        self.trans_conv3 = nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv3.weight)
+
+        self.trans_conv4 = nn.ConvTranspose2d(in_channels=16, out_channels=8, kernel_size=4, stride=2, padding=1)
+        nn.init.kaiming_normal_(self.trans_conv4.weight)
+
+        self.conv6 = nn.Conv2d(in_channels=8, out_channels=3, kernel_size=3, padding=1)
+        nn.init.kaiming_normal_(self.conv6.weight)
+
+        self.conv7 = nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, padding=1)
+        nn.init.kaiming_normal_(self.conv7.weight)
 
     def forward(self, x):
-        # x.size() = (N, 3, W, W)
-        x = F.relu(self.conv1(x))
-        # x.size() = (N, 16, W, W)
-        x = F.relu(self.conv2(x))
-        # x.size() = (N, 32, W, W)
-        x = F.max_pool2d(x, (2,2))
-        # x.size() = (N, 32, W/2, W/2)
-        x = F.relu(self.conv3(x))
-        # x.size() = (N, 16, W/2, W/2)
-        x = F.upsample(x, scale_factor=2, mode=self.upsample_mode)
-        # x.size() = (N, 16, W, W)
-        # x = self.conv4(x)
-        # x.size() = (N, 2, W, W)
+        x = self.vgg_features(x)
         x = self.conv5(x)
+        x = self.trans_conv1(x)
+        x = self.trans_conv2(x)
+        x = self.trans_conv3(x)
+        x = self.trans_conv4(x)
         x = self.conv6(x)
-        # x = self.conv7(x)
-        # x = self.conv8(x)
-
+        x = self.conv7(x)
         return x
-
 class FCN8s(nn.Module):
 
     def __init__(self, n_class=3):
@@ -341,7 +343,7 @@ class FCN8s(nn.Module):
 
         return h
 def model_definition():
-    model = FCN8s()
+    model = FCNVGG()
     model = model.to(device)
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
