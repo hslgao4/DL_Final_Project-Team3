@@ -1,6 +1,6 @@
+from toolbox import *
 import pdb
 
-from toolbox import *
 
 '''Set up random seed'''
 np.random.seed(6303)
@@ -15,7 +15,7 @@ image_size = 224
 epoch = 20
 LR = 0.0002
 SAVE_MODEL = True
-model_name = 'UNET_test'
+model_name = 'UNET_dice'
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -48,8 +48,6 @@ class CustomDataset(Dataset):
         width = self.df.width.iloc[index]
         height = self.df.height.iloc[index]
         image = self.load_image(path)
-        # if self.subset == 'train':
-        # generate mask
         masks = np.zeros((image_size, image_size, 3), dtype=np.float32)
         for i, j in enumerate(["large_bowel", "small_bowel", "stomach"]):
             rles = self.df[j].iloc[index]
@@ -80,14 +78,13 @@ data_augmentation = {
                         ],
                        p=1.0),
 
-    "valid": A.Compose([A.Resize(image_size, image_size, interpolation=cv2.INTER_NEAREST), ], p=1.0),
+    "valid": A.Compose([A.Resize(image_size, image_size, interpolation=cv2.INTER_NEAREST), ], p=1.0)
 
-    "test": A.Compose([A.Resize(image_size, image_size, interpolation=cv2.INTER_NEAREST), ], p=1.0)
 }
 
 train_data = CustomDataset(train_df, augmentation=data_augmentation['train'])
 valid_data = CustomDataset(valid_df, augmentation=data_augmentation['valid'])
-test_data = CustomDataset(test_df, augmentation=data_augmentation['test'])
+test_data = CustomDataset(test_df, augmentation=data_augmentation['valid'])
 
 params_1 = {
     'batch_size': batch_size,
@@ -112,7 +109,7 @@ print(mask.size())
 
 # Mask visualization - sample
 def plot_image_mask(image, mask, n=5):
-    plt.figure(figsize=(5*5, 5))
+    plt.figure(figsize=(25, 5))
     for i in range(n):
         plt.subplot(1, n, i+1)
         images = image[i, ].permute((1, 2, 0)).numpy()
@@ -176,7 +173,8 @@ model = UNET()
 DiceLoss = smp.losses.DiceLoss(mode='multilabel')
 BCELoss = smp.losses.SoftBCEWithLogitsLoss()
 def criterion(y_pred, y_true):
-    return 0.5*BCELoss(y_pred, y_true) + 0.5*DiceLoss(y_pred, y_true)
+    return DiceLoss(y_pred, y_true)
+    # return 0.5*BCELoss(y_pred, y_true) + 0.5*DiceLoss(y_pred, y_true)
 
 optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-6)
 
@@ -184,66 +182,66 @@ train_loss = []
 val_loss = []
 DICE = []
 
-# for epoch in range(epoch):
-#     Loss_t = []
-#     Loss_v = []
-#     dice = []
-#     model.train()
-#     for i, (image, mask) in enumerate(tqdm(train, desc=f"Epoch {epoch+1}")):
-#         images = Variable(image).to(device)
-#         masks = Variable(mask).to(device)
-#         optimizer.zero_grad()
-#         prediction = model(images)
-#         loss = criterion(prediction, masks)
-#         loss.backward()
-#         optimizer.step()
-#         Loss_t.append(loss.item())
-#
-#     model.eval()
-#     with torch.no_grad():
-#         for image, mask in tqdm(valid, desc=f"Epoch {epoch+1} Validation"):
-#             images = Variable(image).to(device)
-#             masks = Variable(mask).to(device)
-#             prediction = model(images)
-#             loss = criterion(prediction, masks)
-#             Loss_v.append(loss.item())
-#             prediction = (nn.Sigmoid()(prediction) > 0.5).double()
-#             val_dice = dice_coe(masks, prediction).cpu().detach().numpy()
-#             dice.append(val_dice)
-#
-#     train_loss.append(sum(Loss_t) / len(Loss_t))
-#     val_loss.append(sum(Loss_v) / len(Loss_v))
-#     DICE.append(sum(dice) / len(dice))
-#     print(f'Epoch{epoch + 1} --> Train Loss: {sum(Loss_t) / len(Loss_t)}')
-#     print(f'Epoch{epoch + 1} --> Validation Loss: {sum(Loss_v) / len(Loss_v)}, DICE coe: {sum(dice) / len(dice)}')
-#
-#     if len(DICE) >= 2:
-#         if DICE[-1] > DICE[-2] and SAVE_MODEL:
-#             torch.save(model.state_dict(), "model_{}.pt".format(model_name))
-#
-#
-# '''Plot the DICE Loss of Train and Validation'''
-# plt.figure()
-# plt.plot(np.arange(epoch+1) + 1, train_loss, label='Train loss')
-# plt.plot(np.arange(epoch+1) + 1, val_loss, label='Validation loss')
-# plt.xlabel("Epoch")
-# plt.ylabel("0.5*BCE + 0.5*DICE Loss")
-# plt.title('0.5*BCE + 0.5*DICE: Train vs. Validation')
-# plt.xticks(np.arange(epoch+1) + 1)
-# plt.tight_layout()
-# plt.legend()
-# plt.show()
-#
-# plt.figure()
-# plt.plot(np.arange(epoch+1) + 1, DICE, label='DICE coe')
-# plt.title('Validation DICE Coefficient')
-# plt.xlabel("Epoch")
-# plt.ylabel("DICE coe")
-# plt.xticks(np.arange(epoch+1) + 1)
-# plt.tight_layout()
-# plt.legend()
-# plt.show()
-#
+for epoch in range(epoch):
+    Loss_t = []
+    Loss_v = []
+    dice = []
+    model.train()
+    for i, (image, mask) in enumerate(tqdm(train, desc=f"Epoch {epoch+1}")):
+        images = Variable(image).to(device)
+        masks = Variable(mask).to(device)
+        optimizer.zero_grad()
+        prediction = model(images)
+        loss = criterion(prediction, masks)
+        loss.backward()
+        optimizer.step()
+        Loss_t.append(loss.item())
+
+    model.eval()
+    with torch.no_grad():
+        for image, mask in tqdm(valid, desc=f"Epoch {epoch+1} Validation"):
+            images = Variable(image).to(device)
+            masks = Variable(mask).to(device)
+            prediction = model(images)
+            loss = criterion(prediction, masks)
+            Loss_v.append(loss.item())
+            prediction = (nn.Sigmoid()(prediction) > 0.5).double()
+            val_dice = dice_coe(masks, prediction).cpu().detach().numpy()
+            dice.append(val_dice)
+
+    train_loss.append(sum(Loss_t) / len(Loss_t))
+    val_loss.append(sum(Loss_v) / len(Loss_v))
+    DICE.append(sum(dice) / len(dice))
+    print(f'Epoch{epoch + 1} --> Train Loss: {sum(Loss_t) / len(Loss_t)}')
+    print(f'Epoch{epoch + 1} --> Validation Loss: {sum(Loss_v) / len(Loss_v)}, DICE coe: {sum(dice) / len(dice)}')
+
+    if len(DICE) >= 2:
+        if DICE[-1] > DICE[-2] and SAVE_MODEL:
+            torch.save(model.state_dict(), "model_{}.pt".format(model_name))
+
+
+'''Plot the DICE Loss of Train and Validation'''
+plt.figure()
+plt.plot(np.arange(epoch+1) + 1, train_loss, label='Train loss')
+plt.plot(np.arange(epoch+1) + 1, val_loss, label='Validation loss')
+plt.xlabel("Epoch")
+plt.ylabel("DICE Loss")
+plt.title('DICE loss: Train vs. Validation')
+plt.xticks(np.arange(epoch+1) + 1)
+plt.tight_layout()
+plt.legend()
+plt.show()
+
+plt.figure()
+plt.plot(np.arange(epoch+1) + 1, DICE, label='DICE coe')
+plt.title('Validation DICE Coefficient')
+plt.xlabel("Epoch")
+plt.ylabel("DICE coe")
+plt.xticks(np.arange(epoch+1) + 1)
+plt.tight_layout()
+plt.legend()
+plt.show()
+
 
 
 '''Test model'''
@@ -251,14 +249,14 @@ dice0 = []
 dice1 = []
 dice2 = []
 model = UNET()
-model.load_state_dict(torch.load('model_UNET_both.pt', map_location=device))
+model.load_state_dict(torch.load('model_UNET_dice.pt', map_location=device))
 
 with torch.no_grad():
     for image, mask in tqdm(test, desc=f"Epoch {1} Test"):
         images = Variable(image).to(device)
         masks = Variable(mask).to(device)
         prediction = model(images)
-        prediction = nn.Sigmoid()(prediction)
+        prediction = (nn.Sigmoid()(prediction) > 0.5).double()
 
         val_dice = dice_coe(masks[:, 0:1], prediction[:, 0:1]).cpu().detach().numpy()
         dice0.append(val_dice)
@@ -287,7 +285,7 @@ pred = []
 with torch.no_grad():
     images = Variable(image_v).to(device)
     prediction = model(images)
-    prediction = nn.Sigmoid()(prediction)
+    prediction = (nn.Sigmoid()(prediction) > 0.5).double()
 pred.append(prediction)
 
 pred = torch.mean(torch.stack(pred, dim=0), dim=0).cpu().detach()
