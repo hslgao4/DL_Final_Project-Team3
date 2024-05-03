@@ -4,5 +4,5 @@
   - run `load_data.py`, `prepare_data.py`, `unet_train.py`
 
 - **F-CNN**: 
-  - Run 
+  - run `load_data.py` -> 'fcn_train.py' -> 'fcn_predict.py'
 
