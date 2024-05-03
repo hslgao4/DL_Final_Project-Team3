@@ -1,44 +1,25 @@
 import numpy as np
 import pandas as pd
 import random
-from glob import glob
-import seaborn as sns
-import zipfile
-from kaggle.api.kaggle_api_extended import KaggleApi
-import os
-import shutil
+from sklearn.model_selection import train_test_split
+import cv2
+import torch
+from torch.autograd import Variable
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+import segmentation_models_pytorch as smp
+import albumentations as A
 from tqdm import tqdm
 tqdm.pandas()
-import time
-import copy
-import joblib
-from collections import defaultdict
-import gc
-from sklearn.model_selection import train_test_split
-import pdb
-
-import cv2
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-
-from sklearn.model_selection import StratifiedKFold, KFold, StratifiedGroupKFold
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import monai
-from torch.autograd import Variable
-import torch.optim as optim
-from torch.optim import lr_scheduler
-from torch.utils.data import Dataset, DataLoader
-from torch.cuda import amp
-import segmentation_models_pytorch as smp
-import timm
+from tqdm import tqdm
+tqdm.pandas()
 
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-import rasterio
-from joblib import Parallel, delayed
+
 
 '''Run-length-encode-and-decode '''
 def rle_decode(mask_rle, shape):
@@ -64,7 +45,6 @@ def rle_encode(img):
 
 
 def show_img(img, mask=None):
-
     plt.imshow(img, cmap='bone')
     if mask is not None:
         plt.imshow(mask, alpha=0.5)
